@@ -55,7 +55,7 @@ ForMash3D/
         └── wheels/
 ```
 
-The main backend treats this repository as a **plain source directory** at `backend/thirdparty`. No Git submodules are used. Each model integration is independently managed and can be updated separately.
+The main backend consumes this repository as a **Git submodule** at `backend/thirdparty`. The submodule is initialized and updated via the main repository's setup script. Each model integration is independently managed and can be updated separately.
 
 ---
 
@@ -93,8 +93,6 @@ Main ForMash3D Repo
               NVIDIA GPU
 ```
 
----
-
 # Model Catalog
 
 | Directory | Source Repository | Primary Role |
@@ -104,17 +102,13 @@ Main ForMash3D Repo
 | `hunyuan3d-dit-v2-mini-turbo/` | https://github.com/Tencent-Hunyuan/Hunyuan3D-2 | 0.6B low-VRAM shape generation |
 | `TRELLIS/` | https://github.com/FishWoWater/TRELLIS | Structured 3D generation and mesh reconstruction |
 | `TRELLIS.2/` | https://github.com/FishWoWater/TRELLIS.2 | Higher-quality 3D generation / downstream processing |
-| `PartField/` | https://github.com/nv-tlabs/PartField | Part-aware 3D understanding |
-| `PartPacker/` | https://github.com/NVlabs/PartPacker | Part-level geometry processing |
-| `PartUV/` | https://github.com/FishWoWater/PartUV | UV and surface processing |
-| `UltraShape/` | https://github.com/PKU-YuanGroup/UltraShape-1.0 | Shape refinement / reconstruction |
-| `VoxHammer/` | https://github.com/FishWoWater/VoxHammer | 3D editing and voxel-based processing |
-| `TripoSF/` | https://github.com/VAST-AI-Research/TripoSF | High-resolution sparse voxel 3D shape generation |
-| `TripoSG/` | https://github.com/VAST-AI-Research/TripoSG | Rectified flow image-to-3D shape generation |
-| `TripoSR/` | https://github.com/VAST-AI-Research/TripoSR | Fast feedforward single-image 3D reconstruction |
-| `ardy/` | https://github.com/NVlabs/ardy | Autoregressive diffusion for interactive motion generation |
-| `UniRig/` | https://github.com/FishWoWater/UniRig | Automatic rigging and animation preparation |
 | `FastMesh/` | https://github.com/FishWoWater/FastMesh | Fast mesh processing / reconstruction |
+| `UniRig/` | https://github.com/FishWoWater/UniRig | Automatic rigging and animation preparation |
+| `ardy/` | https://github.com/NVlabs/ardy | Autoregressive diffusion for interactive motion generation |
+| `PartUV/` | https://github.com/FishWoWater/PartUV | UV and surface processing |
+| `Paint3D/` | Unknown | To be determined |
+| `Pixal3D/` | Unknown | To be determined |
+| `Unique3D/` | Unknown | To be determined |
 
 ---
 
@@ -183,13 +177,13 @@ ForMash3D-ThirdParty/
 └── wheels/
 ```
 
-Each model integration is independently managed. No Git submodules are used. The main ForMash3D backend references `backend/thirdparty/` as a plain source directory.
+Each model integration is independently managed. The main ForMash3D backend references `backend/thirdparty/` as a Git submodule.
 
 ---
 
 # Integration With ForMash3D
 
-The main ForMash3D backend references this repository as a **plain source directory** at `backend/thirdparty/`. No Git submodules are used. Each model integration is independently managed and can be updated separately.
+The main ForMash3D backend references this repository as a **Git submodule** at `backend/thirdparty/`. The submodule is initialized and updated via the main repository's setup script.
 
 The resulting application layout is:
 
@@ -200,13 +194,9 @@ ForMash3D/
 │   ├── app/
 │   ├── scripts/
 │   ├── runtime/
-│   └── thirdparty/        <-- this repository (plain directory)
+│   └── thirdparty/        <-- this repository (Git submodule)
 └── setup.sh
-```
-
----
-
-# Runtime Architecture
+```# Runtime Architecture
 
 ```text
                          ForMash3D
@@ -670,7 +660,7 @@ ForMash3D
 │   ├── workers
 │   ├── runtime manager
 │   ├── model adapters
-│   └── thirdparty  ──────────► ForMash3D-ThirdParty
+│   └── thirdparty (Git submodule) ──────────► ForMash3D-ThirdParty
 │
 └── setup / deployment scripts
 ```
@@ -714,7 +704,7 @@ https://github.com/Silentzx2/ForMash3D-ThirdParty
 ForMash3D/backend/thirdparty
 ```
 
-**Delivery mechanism:** Plain source directory (no submodules)
+**Delivery mechanism:** Git submodule
 
 **Runtime family:** NVIDIA CUDA + PyTorch
 
