@@ -41,6 +41,20 @@ def get_pipeline():
 
 def predict(img_list: List[Image.Image], guidance_scale=2., **kwargs):
     tr, pipe = get_pipeline()
+    if torch.cuda.is_available():
+        if hasattr(pipe, "device") and pipe.device.type != "cuda":
+            pipe.to("cuda")
+        if hasattr(pipe, "enable_attention_slicing"):
+            try:
+                pipe.enable_attention_slicing()
+            except Exception:
+                pass
+        if hasattr(pipe, "enable_vae_slicing"):
+            try:
+                pipe.enable_vae_slicing()
+            except Exception:
+                pass
+
     if isinstance(img_list, Image.Image):
         img_list = [img_list]
     img_list = [rgba_to_rgb(i) if i.mode == 'RGBA' else i for i in img_list]
@@ -53,6 +67,8 @@ def predict(img_list: List[Image.Image], guidance_scale=2., **kwargs):
             **kwargs
         ).images
         ret.extend(images)
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     return ret
 
 

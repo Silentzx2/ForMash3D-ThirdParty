@@ -38,6 +38,20 @@ def get_pipeline():
 
 def predict_normals(image: List[Image.Image], guidance_scale=2., do_rotate=True, num_inference_steps=30, **kwargs):
     tr, pipe = get_pipeline()
+    if torch.cuda.is_available():
+        if hasattr(pipe, "device") and pipe.device.type != "cuda":
+            pipe.to("cuda")
+        if hasattr(pipe, "enable_attention_slicing"):
+            try:
+                pipe.enable_attention_slicing()
+            except Exception:
+                pass
+        if hasattr(pipe, "enable_vae_slicing"):
+            try:
+                pipe.enable_vae_slicing()
+            except Exception:
+                pass
+
     img_list = image if isinstance(image, list) else [image]
     img_list = [rgba_to_rgb(i) if i.mode == 'RGBA' else i for i in img_list]
     images = tr.pipeline_forward(
@@ -47,6 +61,9 @@ def predict_normals(image: List[Image.Image], guidance_scale=2., do_rotate=True,
         guidance_scale=guidance_scale, 
         **kwargs
     ).images
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
     images = simple_remove(images)
     if do_rotate and len(images) > 1:
         images = rotate_normals_torch(images, return_types='pil')
