@@ -172,7 +172,7 @@ class StableDiffusionImage2MVCustomPipeline(
         import requests
 
         pipe = StableDiffusionImageVariationPipeline.from_pretrained(
-            "lambdalabs/sd-image-variations-diffusers", revision="v2.0"
+            "lambda/sd-image-variations-diffusers", revision="v2.0"
         )
         pipe = pipe.to("cuda")
 
