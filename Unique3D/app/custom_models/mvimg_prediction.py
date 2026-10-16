@@ -9,19 +9,45 @@ from app.custom_models.utils import load_pipeline
 from scripts.all_typing import *
 from scripts.utils import session, simple_preprocess
 
-training_config = "app/custom_models/image2mvimage.yaml"
-checkpoint_path = "ckpt/img2mvimg/unet_state_dict.pth"
-trainer, pipeline = load_pipeline(training_config, checkpoint_path)
-# pipeline.enable_model_cpu_offload()
+trainer = None
+pipeline = None
+
+
+def get_pipeline():
+    global trainer, pipeline
+    if trainer is not None and pipeline is not None:
+        return trainer, pipeline
+
+    root = Path(__file__).resolve().parent.parent.parent
+    training_config = str(root / "app" / "custom_models" / "image2mvimage.yaml")
+
+    ckpt_candidates = [
+        root / "ckpt" / "img2mvimg" / "unet_state_dict.pth",
+        root / "ckpt" / "img2mvimg" / "unet" / "diffusion_pytorch_model.safetensors",
+        root.parent.parent / "pretrained" / "Unique3D" / "ckpt" / "img2mvimg" / "unet" / "diffusion_pytorch_model.safetensors",
+        root.parent.parent / "pretrained" / "Unique3D" / "ckpt" / "img2mvimg" / "unet_state_dict.pth",
+    ]
+    checkpoint_path = None
+    for cand in ckpt_candidates:
+        if cand.exists():
+            checkpoint_path = str(cand)
+            break
+    if checkpoint_path is None:
+        checkpoint_path = str(root / "ckpt" / "img2mvimg" / "unet_state_dict.pth")
+
+    trainer, pipeline = load_pipeline(training_config, checkpoint_path)
+    return trainer, pipeline
+
 
 def predict(img_list: List[Image.Image], guidance_scale=2., **kwargs):
+    tr, pipe = get_pipeline()
     if isinstance(img_list, Image.Image):
         img_list = [img_list]
     img_list = [rgba_to_rgb(i) if i.mode == 'RGBA' else i for i in img_list]
     ret = []
     for img in img_list:
-        images = trainer.pipeline_forward(
-            pipeline=pipeline,
+        images = tr.pipeline_forward(
+            pipeline=pipe,
             image=img,
             guidance_scale=guidance_scale, 
             **kwargs

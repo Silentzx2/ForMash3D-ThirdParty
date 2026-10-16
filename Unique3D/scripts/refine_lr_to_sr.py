@@ -35,10 +35,20 @@ def run_sr_fast(source_pils, scale=4):
     global SR_cache
     if SR_cache is not None:
         upsampler = SR_cache
-    else:
+        onnx_path = "ckpt/realesrgan-x4.onnx"
+        if not os.path.exists(onnx_path):
+            from pathlib import Path
+            root = Path(__file__).resolve().parent.parent
+            for cand in [
+                root / "ckpt" / "realesrgan-x4.onnx",
+                root.parent.parent / "pretrained" / "Unique3D" / "ckpt" / "realesrgan-x4.onnx",
+            ]:
+                if cand.exists():
+                    onnx_path = str(cand)
+                    break
         upsampler = RealESRGANer(
             scale=4,
-            onnx_path="ckpt/realesrgan-x4.onnx",
+            onnx_path=onnx_path,
             tile=0,
             tile_pad=10,
             pre_pad=0,

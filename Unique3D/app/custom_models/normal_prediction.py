@@ -1,20 +1,47 @@
 import sys
+from pathlib import Path
 from PIL import Image
 from app.utils import rgba_to_rgb, simple_remove
 from app.custom_models.utils import load_pipeline
 from scripts.utils import rotate_normals_torch
 from scripts.all_typing import *
 
-training_config = "app/custom_models/image2normal.yaml"
-checkpoint_path = "ckpt/image2normal/unet_state_dict.pth"
-trainer, pipeline = load_pipeline(training_config, checkpoint_path)
-# pipeline.enable_model_cpu_offload()
+trainer = None
+pipeline = None
+
+
+def get_pipeline():
+    global trainer, pipeline
+    if trainer is not None and pipeline is not None:
+        return trainer, pipeline
+
+    root = Path(__file__).resolve().parent.parent.parent
+    training_config = str(root / "app" / "custom_models" / "image2normal.yaml")
+
+    ckpt_candidates = [
+        root / "ckpt" / "image2normal" / "unet_state_dict.pth",
+        root / "ckpt" / "image2normal" / "unet" / "diffusion_pytorch_model.safetensors",
+        root.parent.parent / "pretrained" / "Unique3D" / "ckpt" / "image2normal" / "unet" / "diffusion_pytorch_model.safetensors",
+        root.parent.parent / "pretrained" / "Unique3D" / "ckpt" / "image2normal" / "unet_state_dict.pth",
+    ]
+    checkpoint_path = None
+    for cand in ckpt_candidates:
+        if cand.exists():
+            checkpoint_path = str(cand)
+            break
+    if checkpoint_path is None:
+        checkpoint_path = str(root / "ckpt" / "image2normal" / "unet_state_dict.pth")
+
+    trainer, pipeline = load_pipeline(training_config, checkpoint_path)
+    return trainer, pipeline
+
 
 def predict_normals(image: List[Image.Image], guidance_scale=2., do_rotate=True, num_inference_steps=30, **kwargs):
+    tr, pipe = get_pipeline()
     img_list = image if isinstance(image, list) else [image]
     img_list = [rgba_to_rgb(i) if i.mode == 'RGBA' else i for i in img_list]
-    images = trainer.pipeline_forward(
-        pipeline=pipeline,
+    images = tr.pipeline_forward(
+        pipeline=pipe,
         image=img_list,
         num_inference_steps=num_inference_steps,
         guidance_scale=guidance_scale, 
