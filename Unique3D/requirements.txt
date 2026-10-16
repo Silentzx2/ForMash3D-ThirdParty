@@ -1,8 +1,7 @@
 # Unique3D model dependencies
 # (Core torch, transformers, diffusers, trimesh, huggingface_hub locked centrally in backend/requirements.txt)
-datasets==2.14.5
+# (datasets and gradio managed centrally in backend/requirements.txt)
 fire
-gradio
 jaxtyping
 numba
 git+https://github.com/NVlabs/nvdiffrast.git

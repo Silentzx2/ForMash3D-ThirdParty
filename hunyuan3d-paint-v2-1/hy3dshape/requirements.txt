@@ -30,10 +30,10 @@ accelerate
 #scikit-learn
 #scikit-image
 
-# Demo only
-gradio
-fastapi
-uvicorn
+# Demo only (handled centrally by backend)
+# gradio
+# fastapi
+# uvicorn
 rembg
 onnxruntime
 #gevent

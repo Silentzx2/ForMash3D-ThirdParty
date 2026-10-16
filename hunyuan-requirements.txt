@@ -55,8 +55,8 @@ basicsr>=1.3.3.3
 torchmetrics>=1.7.0
 pythreejs
 
-# Web Framework (for demo)
-gradio>=5.0.0
+# Web Framework (demo only, omitted in backend service)
+# gradio>=5.0.0
 
 # ═══════════════════════════════════════════════════════════════
 # PAINT v2.1 — Additional dependencies for Hunyuan3D-Paint-v2-1

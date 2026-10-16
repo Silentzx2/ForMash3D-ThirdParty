@@ -7,5 +7,5 @@ easydict==1.13
 opencv-python-headless>=4.8.0
 trimesh==4.12.0
 zstandard==0.25.0
-gradio
+# gradio
 plyfile==1.1.3
