@@ -9,6 +9,13 @@ from scripts.refine_lr_to_sr import run_sr_fast
 
 GRADIO_CACHE = "/tmp/gradio/"
 
+# Compatibility re-exports from scripts.utils
+try:
+    from scripts.utils import session, simple_preprocess
+except Exception:
+    session = None
+    simple_preprocess = None
+
 def clean_up():
     torch.cuda.empty_cache()
     gc.collect()
