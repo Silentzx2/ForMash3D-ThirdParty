@@ -59,7 +59,20 @@ def load_pipeline(config_path, ckpt_path, pipeline_filter=lambda x: True, weight
         shared_modules = trainer.init_shared_modules(shared_modules)
 
     if load_from_checkpoint is not None:
-        state_dict = torch.load(load_from_checkpoint)
+        if str(load_from_checkpoint).endswith(".safetensors"):
+            try:
+                from safetensors.torch import load_file
+                state_dict = load_file(load_from_checkpoint)
+            except Exception:
+                try:
+                    state_dict = torch.load(load_from_checkpoint, weights_only=False)
+                except TypeError:
+                    state_dict = torch.load(load_from_checkpoint)
+        else:
+            try:
+                state_dict = torch.load(load_from_checkpoint, weights_only=False)
+            except TypeError:
+                state_dict = torch.load(load_from_checkpoint)
         configurable_unet.unet.load_state_dict(state_dict, strict=False)
     # Move unet, vae and text_encoder to device and cast to weight_dtype
     configurable_unet.unet.to(device, dtype=weight_dtype)
