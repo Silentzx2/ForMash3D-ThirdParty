@@ -11,7 +11,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms
-from transformers import DINOv3ViTModel
+try:
+    from transformers import DINOv3ViTModel
+except ImportError:
+    try:
+        from utils.torchvision_fix import get_dinov3_model_class
+        DINOv3ViTModel = get_dinov3_model_class()
+    except Exception:
+        try:
+            from utils.dinov3_vit import DINOv3ViTModel
+        except Exception:
+            from backend.utils.dinov3_vit import DINOv3ViTModel
 import numpy as np
 from PIL import Image, ImageDraw
 
@@ -549,7 +559,11 @@ class DinoV3ProjFeatureExtractor(nn.Module):
         hidden_states = self.model.embeddings(image, bool_masked_pos=None)
         position_embeddings = self.model.rope_embeddings(image)
 
-        for layer_module in self.model.layer:
+        layers = getattr(self.model, "layer", getattr(getattr(self.model, "model", self.model), "layer", None))
+        if layers is None and hasattr(self.model, "encoder"):
+            layers = getattr(self.model.encoder, "layer", [])
+
+        for layer_module in layers:
             hidden_states = layer_module(
                 hidden_states,
                 position_embeddings=position_embeddings,
@@ -955,7 +969,10 @@ class DinoV3VaeProjFeatureExtractor(nn.Module):
         image = image.to(self.dino_model.embeddings.patch_embeddings.weight.dtype)
         hidden_states = self.dino_model.embeddings(image, bool_masked_pos=None)
         position_embeddings = self.dino_model.rope_embeddings(image)
-        for layer_module in self.dino_model.layer:
+        layers = getattr(self.dino_model, "layer", getattr(getattr(self.dino_model, "model", self.dino_model), "layer", None))
+        if layers is None and hasattr(self.dino_model, "encoder"):
+            layers = getattr(self.dino_model.encoder, "layer", [])
+        for layer_module in layers:
             hidden_states = layer_module(
                 hidden_states,
                 position_embeddings=position_embeddings,

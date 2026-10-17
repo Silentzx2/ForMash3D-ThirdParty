@@ -2,7 +2,17 @@ from typing import *
 import torch
 import torch.nn.functional as F
 from torchvision import transforms
-from transformers import DINOv3ViTModel
+try:
+    from transformers import DINOv3ViTModel
+except ImportError:
+    try:
+        from utils.torchvision_fix import get_dinov3_model_class
+        DINOv3ViTModel = get_dinov3_model_class()
+    except Exception:
+        try:
+            from utils.dinov3_vit import DINOv3ViTModel
+        except Exception:
+            from backend.utils.dinov3_vit import DINOv3ViTModel
 import numpy as np
 from PIL import Image
 
@@ -83,7 +93,11 @@ class DinoV3FeatureExtractor:
         hidden_states = self.model.embeddings(image, bool_masked_pos=None)
         position_embeddings = self.model.rope_embeddings(image)
 
-        for i, layer_module in enumerate(self.model.layer):
+        layers = getattr(self.model, "layer", getattr(getattr(self.model, "model", self.model), "layer", None))
+        if layers is None and hasattr(self.model, "encoder"):
+            layers = getattr(self.model.encoder, "layer", [])
+
+        for i, layer_module in enumerate(layers):
             hidden_states = layer_module(
                 hidden_states,
                 position_embeddings=position_embeddings,
