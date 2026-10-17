@@ -35,5 +35,4 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
-*.bak
-wheels*_runtime.yaml
+*_runtime.yaml
