@@ -106,7 +106,18 @@ class Trellis2ImageTo3DPipeline(Pipeline):
         if image_cond_args.get('model_name') == 'facebook/dinov3-vitl16-pretrain-lvd1689m':
             image_cond_args['model_name'] = 'camenduru/dinov3-vitl16-pretrain-lvd1689m'
         pipeline.image_cond_model = getattr(image_feature_extractor, args['image_cond_model']['name'])(**image_cond_args)
-        pipeline.rembg_model = getattr(rembg, args['rembg_model']['name'])(**args['rembg_model']['args'])
+        rembg_args = args['rembg_model']['args'].copy() if 'args' in args['rembg_model'] else {}
+        try:
+            pipeline.rembg_model = getattr(rembg, args['rembg_model']['name'])(**rembg_args)
+        except Exception:
+            if rembg_args.get('model_name') == 'briaai/RMBG-2.0':
+                rembg_args['model_name'] = 'ZhengPeng7/BiRefNet'
+                try:
+                    pipeline.rembg_model = getattr(rembg, args['rembg_model']['name'])(**rembg_args)
+                except Exception:
+                    pipeline.rembg_model = None
+            else:
+                pipeline.rembg_model = None
         
         pipeline.low_vram = args.get('low_vram', True)
         pipeline.default_pipeline_type = args.get('default_pipeline_type', '1024_cascade')
