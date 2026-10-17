@@ -153,3 +153,12 @@ class DinoV3FeatureExtractor:
         image = self.transform(image).to(target_device)
         features = self.extract_features(image)
         return features
+
+
+try:
+    from pixal3d.trainers.flow_matching.mixins.image_conditioned_proj import DinoV3ProjFeatureExtractor
+except Exception:
+    try:
+        from ..trainers.flow_matching.mixins.image_conditioned_proj import DinoV3ProjFeatureExtractor
+    except Exception:
+        DinoV3ProjFeatureExtractor = None
