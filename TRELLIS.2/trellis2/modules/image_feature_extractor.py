@@ -80,15 +80,22 @@ class DinoV3FeatureExtractor:
         ])
 
     def to(self, device):
+        self._device = device
         self.model.to(device)
 
     def cuda(self):
-        self.model.cuda()
+        self.to("cuda")
 
     def cpu(self):
-        self.model.cpu()
+        self.to("cpu")
 
     def extract_features(self, image: torch.Tensor) -> torch.Tensor:
+        try:
+            model_device = next(self.model.parameters()).device
+            if image.device != model_device:
+                image = image.to(model_device)
+        except Exception:
+            pass
         image = image.to(self.model.embeddings.patch_embeddings.weight.dtype)
         hidden_states = self.model.embeddings(image, bool_masked_pos=None)
         position_embeddings = self.model.rope_embeddings(image)
@@ -123,10 +130,26 @@ class DinoV3FeatureExtractor:
             image = [i.resize((self.image_size, self.image_size), Image.LANCZOS) for i in image]
             image = [np.array(i.convert('RGB')).astype(np.float32) / 255 for i in image]
             image = [torch.from_numpy(i).permute(2, 0, 1).float() for i in image]
-            image = torch.stack(image).cuda()
+            image = torch.stack(image)
         else:
             raise ValueError(f"Unsupported type of image: {type(image)}")
         
-        image = self.transform(image).cuda()
+        # Resolve target device
+        target_device = getattr(self, "_device", None)
+        if target_device is None:
+            try:
+                target_device = next(self.model.parameters()).device
+            except Exception:
+                target_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        if isinstance(target_device, str):
+            target_device = torch.device(target_device)
+
+        if target_device.type == "cpu" and torch.cuda.is_available():
+            target_device = torch.device("cuda")
+            self.model.to(target_device)
+            self._device = target_device
+
+        image = self.transform(image).to(target_device)
         features = self.extract_features(image)
         return features

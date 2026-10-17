@@ -191,8 +191,10 @@ class Trellis2ImageTo3DPipeline(Pipeline):
             dict: The conditioning information
         """
         self.image_cond_model.image_size = resolution
-        if self.low_vram:
-            self.image_cond_model.to(self.device)
+        target_dev = getattr(self, "_device", None)
+        if target_dev is None or target_dev == 'cpu':
+            target_dev = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.image_cond_model.to(target_dev)
         cond = self.image_cond_model(image)
         if self.low_vram:
             self.image_cond_model.cpu()
