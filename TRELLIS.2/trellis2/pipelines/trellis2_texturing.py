@@ -12,7 +12,22 @@ import o_voxel
 import cumesh
 import nvdiffrast.torch as dr
 import cv2
-import flex_gemm
+try:
+    import flex_gemm
+    from flex_gemm.ops.grid_sample import grid_sample_3d
+except (ImportError, ModuleNotFoundError, AttributeError):
+    try:
+        from utils.torchvision_fix import get_grid_sample_3d, fix_flex_gemm
+        fix_flex_gemm()
+        grid_sample_3d = get_grid_sample_3d()
+    except Exception:
+        try:
+            from utils.flex_gemm_fallback import grid_sample_3d, install_flex_gemm_shim
+            install_flex_gemm_shim()
+        except Exception:
+            from backend.utils.flex_gemm_fallback import grid_sample_3d, install_flex_gemm_shim
+            install_flex_gemm_shim()
+    import flex_gemm
 
 
 class Trellis2TexturingPipeline(Pipeline):
@@ -323,7 +338,7 @@ class Trellis2TexturingPipeline(Pipeline):
         pos = dr.interpolate(vertices_torch.unsqueeze(0), rast, faces_torch)[0][0]
         
         attrs = torch.zeros(texture_size, texture_size, pbr_voxel.shape[1], device=self.device)
-        attrs[mask] = flex_gemm.ops.grid_sample.grid_sample_3d(
+        attrs[mask] = grid_sample_3d(
             pbr_voxel.feats,
             pbr_voxel.coords,
             shape=torch.Size([*pbr_voxel.shape, *pbr_voxel.spatial_shape]),

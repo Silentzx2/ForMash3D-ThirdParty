@@ -1,8 +1,17 @@
 from typing import *
 import torch
 from ..voxel import Voxel
-import cumesh
-from flex_gemm.ops.grid_sample import grid_sample_3d
+try:
+    from flex_gemm.ops.grid_sample import grid_sample_3d
+except (ImportError, ModuleNotFoundError):
+    try:
+        from utils.torchvision_fix import get_grid_sample_3d
+        grid_sample_3d = get_grid_sample_3d()
+    except Exception:
+        try:
+            from utils.flex_gemm_fallback import grid_sample_3d
+        except Exception:
+            from backend.utils.flex_gemm_fallback import grid_sample_3d
 
 
 class Mesh:

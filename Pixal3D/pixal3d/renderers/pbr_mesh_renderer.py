@@ -353,7 +353,17 @@ class PbrMeshRenderer:
                 # PBR attributes
                 if isinstance(mesh, MeshWithVoxel):
                     if 'grid_sample_3d' not in globals():
-                        from flex_gemm.ops.grid_sample import grid_sample_3d
+                        try:
+                            from flex_gemm.ops.grid_sample import grid_sample_3d
+                        except (ImportError, ModuleNotFoundError):
+                            try:
+                                from utils.torchvision_fix import get_grid_sample_3d
+                                grid_sample_3d = get_grid_sample_3d()
+                            except Exception:
+                                try:
+                                    from utils.flex_gemm_fallback import grid_sample_3d
+                                except Exception:
+                                    from backend.utils.flex_gemm_fallback import grid_sample_3d
                     mask = rast[..., -1:] > 0
                     xyz = dr.interpolate(vertices_orig, rast, faces)[0]
                     xyz = ((xyz - mesh.origin) / mesh.voxel_size).reshape(1, -1, 3)
