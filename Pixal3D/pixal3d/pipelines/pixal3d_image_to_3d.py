@@ -316,12 +316,14 @@ class Pixal3DImageTo3DPipeline(Pipeline):
         """
         # Sample sparse structure latent
         flow_model = self.models['sparse_structure_flow_model']
+        target_dev = self.device if self.low_vram else (next(flow_model.parameters()).device if hasattr(flow_model, "parameters") else self.device)
         reso = flow_model.resolution
         in_channels = flow_model.in_channels
-        noise = torch.randn(num_samples, in_channels, reso, reso, reso).to(self.device)
+        noise = torch.randn(num_samples, in_channels, reso, reso, reso, device=target_dev)
         sampler_params = {**self.sparse_structure_sampler_params, **sampler_params}
         if self.low_vram:
             flow_model.to(self.device)
+        cond = {k: v.to(target_dev) if hasattr(v, 'to') else v for k, v in cond.items()}
         z_s = self.sparse_structure_sampler.sample(
             flow_model,
             noise,
@@ -335,9 +337,10 @@ class Pixal3DImageTo3DPipeline(Pipeline):
         
         # Decode sparse structure latent
         decoder = self.models['sparse_structure_decoder']
+        dec_dev = self.device if self.low_vram else (next(decoder.parameters()).device if hasattr(decoder, "parameters") else self.device)
         if self.low_vram:
             decoder.to(self.device)
-        decoded = decoder(z_s)>0
+        decoded = decoder(z_s.to(dec_dev))>0
         if self.low_vram:
             decoder.cpu()
         if resolution != decoded.shape[2]:
@@ -363,13 +366,16 @@ class Pixal3DImageTo3DPipeline(Pipeline):
             sampler_params (dict): Additional parameters for the sampler.
         """
         # Sample structured latent
+        target_dev = self.device if self.low_vram else (next(flow_model.parameters()).device if hasattr(flow_model, "parameters") else self.device)
+        coords = coords.to(target_dev)
         noise = SparseTensor(
-            feats=torch.randn(coords.shape[0], flow_model.in_channels).to(self.device),
+            feats=torch.randn(coords.shape[0], flow_model.in_channels, device=target_dev),
             coords=coords,
         )
         sampler_params = {**self.shape_slat_sampler_params, **sampler_params}
         if self.low_vram:
             flow_model.to(self.device)
+        cond = {k: v.to(target_dev) if hasattr(v, 'to') else v for k, v in cond.items()}
         slat = self.shape_slat_sampler.sample(
             flow_model,
             noise,
@@ -381,8 +387,8 @@ class Pixal3DImageTo3DPipeline(Pipeline):
         if self.low_vram:
             flow_model.cpu()
 
-        std = torch.tensor(self.shape_slat_normalization['std'])[None].to(slat.device)
-        mean = torch.tensor(self.shape_slat_normalization['mean'])[None].to(slat.device)
+        std = torch.tensor(self.shape_slat_normalization['std'], device=slat.device)[None]
+        mean = torch.tensor(self.shape_slat_normalization['mean'], device=slat.device)[None]
         slat = slat * std + mean
         
         return slat
@@ -414,13 +420,16 @@ class Pixal3DImageTo3DPipeline(Pipeline):
             max_num_tokens (int): Maximum number of tokens.
         """
         # LR
+        lr_dev = self.device if self.low_vram else (next(flow_model_lr.parameters()).device if hasattr(flow_model_lr, "parameters") else self.device)
+        coords_lr = coords.to(lr_dev)
         noise = SparseTensor(
-            feats=torch.randn(coords.shape[0], flow_model_lr.in_channels).to(self.device),
-            coords=coords,
+            feats=torch.randn(coords_lr.shape[0], flow_model_lr.in_channels, device=lr_dev),
+            coords=coords_lr,
         )
         sampler_params = {**self.shape_slat_sampler_params, **sampler_params}
         if self.low_vram:
             flow_model_lr.to(self.device)
+        lr_cond = {k: v.to(lr_dev) if hasattr(v, 'to') else v for k, v in lr_cond.items()}
         slat = self.shape_slat_sampler.sample(
             flow_model_lr,
             noise,
@@ -431,15 +440,16 @@ class Pixal3DImageTo3DPipeline(Pipeline):
         ).samples
         if self.low_vram:
             flow_model_lr.cpu()
-        std = torch.tensor(self.shape_slat_normalization['std'])[None].to(slat.device)
-        mean = torch.tensor(self.shape_slat_normalization['mean'])[None].to(slat.device)
+        std = torch.tensor(self.shape_slat_normalization['std'], device=slat.device)[None]
+        mean = torch.tensor(self.shape_slat_normalization['mean'], device=slat.device)[None]
         slat = slat * std + mean
         
         # Upsample
+        dec_dev = self.device if self.low_vram else (next(self.models['shape_slat_decoder'].parameters()).device if hasattr(self.models['shape_slat_decoder'], "parameters") else self.device)
         if self.low_vram:
             self.models['shape_slat_decoder'].to(self.device)
             self.models['shape_slat_decoder'].low_vram = True
-        hr_coords = self.models['shape_slat_decoder'].upsample(slat, upsample_times=4)
+        hr_coords = self.models['shape_slat_decoder'].upsample(slat.to(dec_dev), upsample_times=4)
         if self.low_vram:
             self.models['shape_slat_decoder'].cpu()
             self.models['shape_slat_decoder'].low_vram = False
@@ -458,11 +468,14 @@ class Pixal3DImageTo3DPipeline(Pipeline):
             hr_resolution -= 128
         
         # Sample structured latent (HR)
+        hr_dev = self.device if self.low_vram else (next(flow_model.parameters()).device if hasattr(flow_model, "parameters") else self.device)
+        coords_hr = coords.to(hr_dev)
         noise = SparseTensor(
-            feats=torch.randn(coords.shape[0], flow_model.in_channels).to(self.device),
-            coords=coords,
+            feats=torch.randn(coords_hr.shape[0], flow_model.in_channels, device=hr_dev),
+            coords=coords_hr,
         )
         sampler_params = {**self.shape_slat_sampler_params, **sampler_params}
+        cond = {k: v.to(hr_dev) if hasattr(v, 'to') else v for k, v in cond.items()}
         if self.low_vram:
             flow_model.to(self.device)
         slat = self.shape_slat_sampler.sample(
@@ -476,8 +489,8 @@ class Pixal3DImageTo3DPipeline(Pipeline):
         if self.low_vram:
             flow_model.cpu()
 
-        std = torch.tensor(self.shape_slat_normalization['std'])[None].to(slat.device)
-        mean = torch.tensor(self.shape_slat_normalization['mean'])[None].to(slat.device)
+        std = torch.tensor(self.shape_slat_normalization['std'], device=slat.device)[None]
+        mean = torch.tensor(self.shape_slat_normalization['mean'], device=slat.device)[None]
         slat = slat * std + mean
         
         return slat, hr_resolution
@@ -497,11 +510,12 @@ class Pixal3DImageTo3DPipeline(Pipeline):
             List[Mesh]: The decoded meshes.
             List[SparseTensor]: The decoded substructures.
         """
+        target_dev = self.device if self.low_vram else (next(self.models['shape_slat_decoder'].parameters()).device if hasattr(self.models['shape_slat_decoder'], "parameters") else self.device)
         self.models['shape_slat_decoder'].set_resolution(resolution)
         if self.low_vram:
             self.models['shape_slat_decoder'].to(self.device)
             self.models['shape_slat_decoder'].low_vram = True
-        ret = self.models['shape_slat_decoder'](slat, return_subs=True)
+        ret = self.models['shape_slat_decoder'](slat.to(target_dev), return_subs=True)
         if self.low_vram:
             self.models['shape_slat_decoder'].cpu()
             self.models['shape_slat_decoder'].low_vram = False
@@ -523,13 +537,16 @@ class Pixal3DImageTo3DPipeline(Pipeline):
             sampler_params (dict): Additional parameters for the sampler.
         """
         # Sample structured latent
-        std = torch.tensor(self.shape_slat_normalization['std'])[None].to(shape_slat.device)
-        mean = torch.tensor(self.shape_slat_normalization['mean'])[None].to(shape_slat.device)
+        target_dev = self.device if self.low_vram else (next(flow_model.parameters()).device if hasattr(flow_model, "parameters") else self.device)
+        shape_slat = shape_slat.to(target_dev)
+        std = torch.tensor(self.shape_slat_normalization['std'], device=target_dev)[None]
+        mean = torch.tensor(self.shape_slat_normalization['mean'], device=target_dev)[None]
         shape_slat = (shape_slat - mean) / std
 
         in_channels = flow_model.in_channels if isinstance(flow_model, nn.Module) else flow_model[0].in_channels
-        noise = shape_slat.replace(feats=torch.randn(shape_slat.coords.shape[0], in_channels - shape_slat.feats.shape[1]).to(self.device))
+        noise = shape_slat.replace(feats=torch.randn(shape_slat.coords.shape[0], in_channels - shape_slat.feats.shape[1], device=target_dev))
         sampler_params = {**self.tex_slat_sampler_params, **sampler_params}
+        cond = {k: v.to(target_dev) if hasattr(v, 'to') else v for k, v in cond.items()}
         if self.low_vram:
             flow_model.to(self.device)
         slat = self.tex_slat_sampler.sample(
@@ -544,8 +561,8 @@ class Pixal3DImageTo3DPipeline(Pipeline):
         if self.low_vram:
             flow_model.cpu()
 
-        std = torch.tensor(self.tex_slat_normalization['std'])[None].to(slat.device)
-        mean = torch.tensor(self.tex_slat_normalization['mean'])[None].to(slat.device)
+        std = torch.tensor(self.tex_slat_normalization['std'], device=slat.device)[None]
+        mean = torch.tensor(self.tex_slat_normalization['mean'], device=slat.device)[None]
         slat = slat * std + mean
         
         return slat
@@ -564,9 +581,11 @@ class Pixal3DImageTo3DPipeline(Pipeline):
         Returns:
             SparseTensor: The decoded texture voxels
         """
+        dec_dev = self.device if self.low_vram else (next(self.models['tex_slat_decoder'].parameters()).device if hasattr(self.models['tex_slat_decoder'], "parameters") else self.device)
         if self.low_vram:
             self.models['tex_slat_decoder'].to(self.device)
-        ret = self.models['tex_slat_decoder'](slat, guide_subs=subs) * 0.5 + 0.5
+        subs = [s.to(dec_dev) for s in subs] if subs else subs
+        ret = self.models['tex_slat_decoder'](slat.to(dec_dev), guide_subs=subs) * 0.5 + 0.5
         if self.low_vram:
             self.models['tex_slat_decoder'].cpu()
         return ret
@@ -586,8 +605,11 @@ class Pixal3DImageTo3DPipeline(Pipeline):
             tex_slat (SparseTensor): The structured latent for texture.
             resolution (int): The resolution of the output.
         """
-        meshes, subs = self.decode_shape_slat(shape_slat, resolution)
-        tex_voxels = self.decode_tex_slat(tex_slat, subs)
+        shape_dec_dev = self.device if self.low_vram else (next(self.models['shape_slat_decoder'].parameters()).device if hasattr(self.models['shape_slat_decoder'], "parameters") else self.device)
+        tex_dec_dev = self.device if self.low_vram else (next(self.models['tex_slat_decoder'].parameters()).device if hasattr(self.models['tex_slat_decoder'], "parameters") else self.device)
+        meshes, subs = self.decode_shape_slat(shape_slat.to(shape_dec_dev), resolution)
+        subs = [s.to(tex_dec_dev) for s in subs] if subs else subs
+        tex_voxels = self.decode_tex_slat(tex_slat.to(tex_dec_dev), subs)
         out_mesh = []
         torch.cuda.synchronize()
         for m, v in zip(meshes, tex_voxels):
