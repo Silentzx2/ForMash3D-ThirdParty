@@ -14,6 +14,16 @@ def __from_env():
     
     if env_attn_backend is not None and env_attn_backend in ['xformers', 'flash_attn', 'flash_attn_3', 'sdpa', 'naive']:
         BACKEND = env_attn_backend
+    else:
+        # FlashAttention requires Ampere (SM 8.0) or newer. On Turing/Volta (T4, V100), default to sdpa
+        try:
+            import torch
+            if torch.cuda.is_available():
+                major, _ = torch.cuda.get_device_capability()
+                if major < 8:
+                    BACKEND = 'sdpa'
+        except Exception:
+            pass
     if env_attn_debug is not None:
         DEBUG = env_attn_debug == '1'
 
