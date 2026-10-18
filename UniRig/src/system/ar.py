@@ -176,8 +176,17 @@ class ARSystem(L.LightningModule):
             prediction: List[DetokenizeOutput] = self._predict_step(batch=batch, batch_idx=batch_idx, dataloader_idx=dataloader_idx)
             return prediction
         except Exception as e:
-            print(str(e))
-            return []
+            if "FlashAttention" in str(e) or "flash_attn" in str(e).lower():
+                try:
+                    if hasattr(self.model, "transformer") and hasattr(self.model.transformer, "config"):
+                        self.model.transformer.config._attn_implementation = "sdpa"
+                    prediction = self._predict_step(batch=batch, batch_idx=batch_idx, dataloader_idx=dataloader_idx)
+                    return prediction
+                except Exception as retry_err:
+                    print(f"Retry with sdpa failed: {retry_err}")
+                    raise retry_err
+            print(f"Error during AR predict_step: {str(e)}")
+            raise e
     
 class ARWriter(BasePredictionWriter):
     def __init__(

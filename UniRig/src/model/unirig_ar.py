@@ -48,7 +48,34 @@ class UniRigAR(ModelSpec):
         
         _d = llm.copy()
         _d['vocab_size'] = self.tokenizer.vocab_size
+
+        # Dynamically verify if flash attention 2 is supported on the current hardware
+        def _should_use_sdpa() -> bool:
+            import os
+            if os.environ.get("ATTN_BACKEND") == "sdpa":
+                return True
+            if not torch.cuda.is_available():
+                return True
+            try:
+                for i in range(torch.cuda.device_count()):
+                    if torch.cuda.get_device_capability(i)[0] < 8:
+                        return True
+            except Exception:
+                return True
+            try:
+                import flash_attn
+                if not hasattr(flash_attn, "flash_attn_func"):
+                    return True
+            except Exception:
+                return True
+            return False
+
+        if _should_use_sdpa() or _d.get('_attn_implementation') in (None, 'sdpa'):
+            _d['_attn_implementation'] = 'sdpa'
+
         llm_config = AutoConfig.from_pretrained(**_d)
+        if _should_use_sdpa():
+            llm_config._attn_implementation = 'sdpa'
         # Force float32 precision for the model
         llm_config.torch_dtype = torch.float32
         # Force enable pre_norm
@@ -152,14 +179,29 @@ class UniRigAR(ModelSpec):
             tokenizer=self.tokenizer,
             start_tokens=start_tokens,
         )
-        results = self.transformer.generate(
-            inputs_embeds=cond,
-            bos_token_id=self.tokenizer.bos,
-            eos_token_id=self.tokenizer.eos,
-            pad_token_id=self.tokenizer.pad,
-            logits_processor=LogitsProcessorList([processor]),
-            **kwargs,
-        )
+        try:
+            results = self.transformer.generate(
+                inputs_embeds=cond,
+                bos_token_id=self.tokenizer.bos,
+                eos_token_id=self.tokenizer.eos,
+                pad_token_id=self.tokenizer.pad,
+                logits_processor=LogitsProcessorList([processor]),
+                **kwargs,
+            )
+        except Exception as gen_err:
+            if "FlashAttention" in str(gen_err) or "flash_attn" in str(gen_err).lower():
+                if hasattr(self.transformer, "config"):
+                    self.transformer.config._attn_implementation = "sdpa"
+                results = self.transformer.generate(
+                    inputs_embeds=cond,
+                    bos_token_id=self.tokenizer.bos,
+                    eos_token_id=self.tokenizer.eos,
+                    pad_token_id=self.tokenizer.pad,
+                    logits_processor=LogitsProcessorList([processor]),
+                    **kwargs,
+                )
+            else:
+                raise gen_err
         output_ids = results[0, :]
         for token in reversed(start_tokens):
             output_ids = pad(output_ids, (1, 0), value=token)

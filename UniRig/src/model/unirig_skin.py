@@ -122,9 +122,31 @@ class ResidualCrossAttn(nn.Module):
             nn.Linear(feat_dim * 4, feat_dim),
         )
         
+    def _fallback_sdpa(self, q, kv):
+        Wq = getattr(self.attention, "Wq", None)
+        Wkv = getattr(self.attention, "Wkv", None)
+        out_proj = getattr(self.attention, "out_proj", None)
+        if Wq is not None and Wkv is not None and out_proj is not None:
+            num_heads = getattr(self.attention, "num_heads", 8)
+            head_dim = q.shape[-1] // num_heads
+            q_p = Wq(q).view(q.shape[0], q.shape[1], num_heads, head_dim).transpose(1, 2)
+            kv_p = Wkv(kv).view(kv.shape[0], kv.shape[1], 2, num_heads, head_dim)
+            k_p = kv_p[:, :, 0].transpose(1, 2)
+            v_p = kv_p[:, :, 1].transpose(1, 2)
+            out = F.scaled_dot_product_attention(q_p, k_p, v_p)
+            out = out.transpose(1, 2).contiguous().view(q.shape[0], q.shape[1], -1)
+            return out_proj(out)
+        return q
+
     def forward(self, q, kv):
         residual = q
-        attn_output = self.attention(q, x_kv=kv)
+        try:
+            attn_output = self.attention(q, x_kv=kv)
+        except Exception as e:
+            if "FlashAttention" in str(e) or "flash_attn" in str(e).lower():
+                attn_output = self._fallback_sdpa(q, kv)
+            else:
+                raise
         x = self.norm1(residual + attn_output)
         x = self.norm2(x + self.ffn(x))
         return x

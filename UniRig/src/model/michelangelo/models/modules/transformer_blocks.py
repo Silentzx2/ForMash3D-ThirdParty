@@ -35,14 +35,11 @@ def init_linear(l, stddev):
         nn.init.constant_(l.bias, 0.0)
 
 def flash_attention(q, k, v):
-    with torch.backends.cuda.sdp_kernel(enable_flash=True, enable_math=True, enable_mem_efficient=False):
-        q = q.transpose(1, 2)
-        k = k.transpose(1, 2)
-        v = v.transpose(1, 2)
-        out = F.scaled_dot_product_attention(q, k, v)
-        out = out.transpose(1, 2)
-        # print("use flash atten 2")   
-
+    q = q.transpose(1, 2)
+    k = k.transpose(1, 2)
+    v = v.transpose(1, 2)
+    out = F.scaled_dot_product_attention(q, k, v)
+    out = out.transpose(1, 2)
     return out
 
 class MultiheadAttention(nn.Module):
