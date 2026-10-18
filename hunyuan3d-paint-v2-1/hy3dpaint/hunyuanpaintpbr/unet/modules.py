@@ -48,8 +48,16 @@ class Dino_v2(nn.Module):
 
     def __init__(self, dino_v2_path):
         super(Dino_v2, self).__init__()
-        self.dino_processor = AutoImageProcessor.from_pretrained(dino_v2_path)
-        self.dino_v2 = AutoModel.from_pretrained(dino_v2_path)
+        actual_path = dino_v2_path
+        if not (dino_v2_path and os.path.isdir(dino_v2_path) and os.path.isfile(os.path.join(dino_v2_path, "config.json"))):
+            if not (dino_v2_path and "/" in str(dino_v2_path) and not os.path.isabs(str(dino_v2_path)) and ":" not in str(dino_v2_path)):
+                actual_path = "facebook/dinov2-giant"
+        try:
+            self.dino_processor = AutoImageProcessor.from_pretrained(actual_path)
+            self.dino_v2 = AutoModel.from_pretrained(actual_path)
+        except Exception:
+            self.dino_processor = AutoImageProcessor.from_pretrained("facebook/dinov2-giant")
+            self.dino_v2 = AutoModel.from_pretrained("facebook/dinov2-giant")
 
         for param in self.parameters():
             param.requires_grad = False

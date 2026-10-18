@@ -34,15 +34,26 @@ class multiviewDiffusionNet:
         self.cfg = cfg
         self.mode = self.cfg.model.params.stable_diffusion_config.custom_pipeline[2:]
 
-        if config.multiview_pretrained_path.startswith("/") or ":" in config.multiview_pretrained_path:
-            model_path = config.multiview_pretrained_path
+        path_candidate = str(getattr(config, "multiview_pretrained_path", ""))
+        if path_candidate and (os.path.isdir(path_candidate) or path_candidate.startswith("/") or ":" in path_candidate or "\\" in path_candidate):
+            if os.path.isdir(os.path.join(path_candidate, "hunyuan3d-paintpbr-v2-1")):
+                model_path = os.path.join(path_candidate, "hunyuan3d-paintpbr-v2-1")
+            elif os.path.isdir(path_candidate):
+                model_path = path_candidate
+            else:
+                repo_id = "tencent/Hunyuan3D-2.1"
+                downloaded = huggingface_hub.snapshot_download(
+                    repo_id=repo_id,
+                    allow_patterns=["hunyuan3d-paintpbr-v2-1/*"],
+                )
+                model_path = os.path.join(downloaded, "hunyuan3d-paintpbr-v2-1")
         else:
-            model_path = huggingface_hub.snapshot_download(
-                repo_id=config.multiview_pretrained_path,
+            repo_id = path_candidate if (path_candidate and "/" in path_candidate and not os.path.exists(path_candidate)) else "tencent/Hunyuan3D-2.1"
+            downloaded = huggingface_hub.snapshot_download(
+                repo_id=repo_id,
                 allow_patterns=["hunyuan3d-paintpbr-v2-1/*"],
             )
-
-        model_path = os.path.join(model_path, "hunyuan3d-paintpbr-v2-1")
+            model_path = os.path.join(downloaded, "hunyuan3d-paintpbr-v2-1")
         pipeline = DiffusionPipeline.from_pretrained(
             model_path,
             custom_pipeline=custom_pipeline, 
