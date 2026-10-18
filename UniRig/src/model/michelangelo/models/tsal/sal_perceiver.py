@@ -25,8 +25,39 @@ import torch.nn as nn
 from typing import Optional, Union
 from einops import repeat
 import math
-from torch_cluster import fps
 import random
+try:
+    from torch_cluster import fps
+except ImportError:
+    def fps(src: torch.Tensor, batch: Optional[torch.Tensor] = None, ratio: Optional[float] = None, random_start: bool = True) -> torch.Tensor:
+        """Pure PyTorch fallback for torch_cluster.fps when C-extension is not installed."""
+        if ratio is None:
+            ratio = 0.5
+        if batch is None:
+            batch = torch.zeros(src.size(0), dtype=torch.long, device=src.device)
+        batch_size = int(batch.max().item()) + 1 if batch.numel() > 0 else 1
+        selected = []
+        for b in range(batch_size):
+            mask = (batch == b)
+            batch_indices = mask.nonzero(as_tuple=False).view(-1)
+            num_points = batch_indices.numel()
+            if num_points == 0:
+                continue
+            num_samples = max(1, int(math.ceil(num_points * ratio))) if isinstance(ratio, float) else int(ratio)
+            num_samples = min(num_samples, num_points)
+            pts = src[batch_indices]
+            sampled_idx = torch.zeros(num_samples, dtype=torch.long, device=src.device)
+            start = random.randint(0, num_points - 1) if random_start else 0
+            sampled_idx[0] = start
+            cur = pts[start : start + 1]
+            dists = torch.sum((pts - cur) ** 2, dim=-1)
+            for i in range(1, num_samples):
+                far = torch.argmax(dists)
+                sampled_idx[i] = far
+                new_p = pts[far : far + 1]
+                dists = torch.minimum(dists, torch.sum((pts - new_p) ** 2, dim=-1))
+            selected.append(batch_indices[sampled_idx])
+        return torch.cat(selected, dim=0) if selected else torch.empty(0, dtype=torch.long, device=src.device)
 import time
 import numpy as np
 
