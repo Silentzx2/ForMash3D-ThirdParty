@@ -764,3 +764,21 @@ wheels
   <strong>ForMash3D — 3D AI Runtime Stack</strong><br>
   <sub>One backend. One dependency bundle. Reproducible model environments.</sub>
 </p>
+
+
+# Runtime Path Resolution Contract
+
+Hunyuan3D-Paint resolves checkpoint sources explicitly. A blank source uses the
+documented default Hugging Face repository. An existing local directory is used
+as-is (or its `hunyuan3d-paintpbr-v2-1` child when present) and must contain
+`model_index.json`. A missing absolute path, incomplete local DINOv2 checkpoint,
+or invalid local model layout fails with an actionable error; it must not silently
+switch to a different remote model. A Hugging Face repository ID such as
+`tencent/Hunyuan3D-2.1` remains a supported explicit source.
+
+Dependency-light resolver regression tests live in
+`tests/test_runtime_path_utils.py` and can be run with:
+
+```bash
+python -m pytest -q tests/test_runtime_path_utils.py
+```

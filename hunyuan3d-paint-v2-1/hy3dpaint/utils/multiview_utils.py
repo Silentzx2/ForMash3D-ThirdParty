@@ -13,6 +13,7 @@
 # by Tencent in accordance with TENCENT HUNYUAN COMMUNITY LICENSE AGREEMENT.
 
 import os
+import logging
 import torch
 import random
 import numpy as np
@@ -22,6 +23,9 @@ import huggingface_hub
 from omegaconf import OmegaConf
 from diffusers import DiffusionPipeline
 from diffusers import EulerAncestralDiscreteScheduler, DDIMScheduler, UniPCMultistepScheduler
+from .runtime_path_utils import resolve_model_source
+
+logger = logging.getLogger(__name__)
 
 
 class multiviewDiffusionNet:
@@ -34,26 +38,27 @@ class multiviewDiffusionNet:
         self.cfg = cfg
         self.mode = self.cfg.model.params.stable_diffusion_config.custom_pipeline[2:]
 
-        path_candidate = str(getattr(config, "multiview_pretrained_path", ""))
-        if path_candidate and (os.path.isdir(path_candidate) or path_candidate.startswith("/") or ":" in path_candidate or "\\" in path_candidate):
-            if os.path.isdir(os.path.join(path_candidate, "hunyuan3d-paintpbr-v2-1")):
-                model_path = os.path.join(path_candidate, "hunyuan3d-paintpbr-v2-1")
-            elif os.path.isdir(path_candidate):
-                model_path = path_candidate
-            else:
-                repo_id = "tencent/Hunyuan3D-2.1"
-                downloaded = huggingface_hub.snapshot_download(
-                    repo_id=repo_id,
-                    allow_patterns=["hunyuan3d-paintpbr-v2-1/*"],
-                )
-                model_path = os.path.join(downloaded, "hunyuan3d-paintpbr-v2-1")
+        path_candidate = getattr(config, "multiview_pretrained_path", "")
+        source_kind, source_value = resolve_model_source(
+            path_candidate,
+            default_repo_id="tencent/Hunyuan3D-2.1",
+            nested_dir="hunyuan3d-paintpbr-v2-1",
+        )
+        if source_kind == "local":
+            model_path = source_value
+            logger.info("Loading Hunyuan3D-Paint checkpoint from local directory %s", model_path)
         else:
-            repo_id = path_candidate if (path_candidate and "/" in path_candidate and not os.path.exists(path_candidate)) else "tencent/Hunyuan3D-2.1"
+            logger.info("Loading Hunyuan3D-Paint checkpoint from Hugging Face repository %s", source_value)
             downloaded = huggingface_hub.snapshot_download(
-                repo_id=repo_id,
+                repo_id=source_value,
                 allow_patterns=["hunyuan3d-paintpbr-v2-1/*"],
             )
             model_path = os.path.join(downloaded, "hunyuan3d-paintpbr-v2-1")
+            if not os.path.isdir(model_path):
+                raise FileNotFoundError(
+                    f"Repository {source_value!r} was downloaded but the expected "
+                    f"Hunyuan3D-Paint model directory is missing: {model_path}"
+                )
         pipeline = DiffusionPipeline.from_pretrained(
             model_path,
             custom_pipeline=custom_pipeline, 
