@@ -15,6 +15,7 @@ from transformers.generation.logits_process import LogitsProcessorList
 from transformers.generation.stopping_criteria import StoppingCriteriaList
 from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS
 from transformers.modeling_flash_attention_utils import _flash_attention_forward
+from transformers.modeling_attn_mask_utils import _prepare_4d_causal_attention_mask
 
 logger = logging.get_logger(__name__)
 
@@ -326,16 +327,38 @@ class ShapeOPTDecoder(OPTDecoder):
 
         past_key_values_length = past_key_values[0][0].shape[2] if past_key_values is not None else 0
 
-        # required mask seq length can be calculated via length of past
+        # Match Transformers' OPT decoder mask handling: FlashAttention consumes a
+        # 2D mask, while eager attention requires a 4D causal mask.
+        batch_size = inputs_embeds.shape[0]
+        input_shape = inputs_embeds.size()[:-1]
+        mask_seq_length = past_key_values_length + input_shape[-1]
 
-        # embed positions
         if self._use_flash_attention_2:
-            # 2d mask is passed through the layers
-            assert attention_mask is not None
-            causal_attention_mask = attention_mask if 0 in attention_mask else None
+            causal_attention_mask = (
+                attention_mask
+                if (attention_mask is not None and 0 in attention_mask)
+                else None
+            )
+            attention_mask = (
+                torch.ones(batch_size, mask_seq_length, device=inputs_embeds.device)
+                if attention_mask is None
+                else attention_mask
+            )
         else:
-            raise ValueError("Only flash_attention_2 is supported in MeshAnything")
-        
+            if attention_mask is None:
+                attention_mask = torch.ones(
+                    batch_size, mask_seq_length, device=inputs_embeds.device
+                )
+            elif attention_mask.shape[1] != mask_seq_length:
+                raise ValueError(
+                    f"The provided attention mask has length {attention_mask.shape[1]}, "
+                    f"but its length should be {mask_seq_length} "
+                    "(sum of current and cached input lengths)"
+                )
+            causal_attention_mask = _prepare_4d_causal_attention_mask(
+                attention_mask, input_shape, inputs_embeds, past_key_values_length
+            )
+
         pos_id = min(past_key_values_length, self.max_position_embeddings-2)
 
         if pos_id != past_key_values_length:

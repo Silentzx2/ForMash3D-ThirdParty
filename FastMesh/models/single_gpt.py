@@ -1,3 +1,4 @@
+import logging
 import torch
 import torch.nn.functional as nnf
 from torch import nn
@@ -6,6 +7,31 @@ from .miche.encode import load_model
 from .shape_opt import ShapeOPTConfig
 from .models import register
 from .vert_refine import VertRefine
+
+logger = logging.getLogger(__name__)
+
+
+def _select_fastmesh_attention_implementation() -> str:
+    """Use FlashAttention only on Ampere-class GPUs; fall back to eager otherwise."""
+    if not torch.cuda.is_available():
+        logger.info("FastMesh is using eager attention because CUDA is unavailable")
+        return "eager"
+
+    try:
+        capability = torch.cuda.get_device_capability(torch.cuda.current_device())
+    except Exception as exc:
+        logger.warning("Could not query CUDA capability for FastMesh attention selection: %s", exc)
+        return "eager"
+
+    if capability[0] >= 8:
+        return "flash_attention_2"
+
+    logger.info(
+        "FastMesh GPU compute capability %s.%s is pre-Ampere; using eager attention",
+        capability[0],
+        capability[1],
+    )
+    return "eager"
 
 def coor_discretize(
     t,
@@ -56,12 +82,13 @@ class SingleGPT(nn.Module):
         self.gen_max_length = int(args['gen_n_max_triangles'] + self.cond_length + 2) 
 
         vocab_size = self.n_discrete_size + 3 # 4 for bos, eos, pad, &
+        attention_implementation = _select_fastmesh_attention_implementation()
         self.config = ShapeOPTConfig.from_pretrained(
             args['llm'],
             n_positions=self.max_length,
             max_position_embeddings=self.max_length,
             vocab_size = vocab_size,
-            _attn_implementation="flash_attention_2"
+            _attn_implementation=attention_implementation
         )
 
         self.bos_token_id = 0
@@ -71,7 +98,6 @@ class SingleGPT(nn.Module):
         self.config.bos_token_id = self.bos_token_id
         self.config.eos_token_id = self.eos_token_id
         self.config.pad_token_id = self.pad_token_id
-        self.config._attn_implementation ="flash_attention_2"
         self.config.n_discrete_size = self.n_discrete_size
         self.config.cond_length = self.cond_length
         self.config.max_vertices = args['max_vertices']
