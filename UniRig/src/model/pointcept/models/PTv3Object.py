@@ -14,6 +14,19 @@ try:
 except ImportError:
     flash_attn = None
 
+
+def _supports_flash_attention_on_current_device() -> bool:
+    """Return whether the current CUDA device can run FlashAttention 2."""
+    if flash_attn is None or not torch.cuda.is_available():
+        return False
+    try:
+        major, _ = torch.cuda.get_device_capability(torch.cuda.current_device())
+    except Exception:
+        # If device capability cannot be determined, take the compatible eager path.
+        return False
+    return major >= 8
+
+
 from .utils.misc import offset2bincount
 from .utils.structure import Point
 from .modules import PointModule, PointSequential
@@ -86,12 +99,19 @@ class SerializedAttention(PointModule):
         self.upcast_attention = upcast_attention
         self.upcast_softmax = upcast_softmax
         self.enable_rpe = enable_rpe
+        # FlashAttention 2 requires Ampere (compute capability 8.0) or newer.
+        # Choose the eager path before forward so unsupported hardware never calls
+        # the FlashAttention kernel.
+        enable_flash = bool(enable_flash and _supports_flash_attention_on_current_device())
         self.enable_flash = enable_flash
         self.enable_qknorm = enable_qknorm
         if enable_qknorm:
             self.qknorm = QueryKeyNorm(channels, num_heads)
         else:
             print("WARNING: enable_qknorm is False in PTv3Object and training may be fragile")
+        # Keep attention dropout callable in both eager mode and the FlashAttention
+        # exception fallback. FlashAttention receives only the numeric probability.
+        self.attn_drop = torch.nn.Dropout(attn_drop)
         if enable_flash:
             assert (
                 enable_rpe is False
@@ -102,16 +122,13 @@ class SerializedAttention(PointModule):
             assert (
                 upcast_softmax is False
             ), "Set upcast_softmax to False when enable Flash Attention"
-            assert flash_attn is not None, "Make sure flash_attn is installed."
             self.patch_size = patch_size
-            self.attn_drop = attn_drop
         else:
             # when disable flash attention, we still don't want to use mask
             # consequently, patch size will auto set to the
             # min number of patch_size_max and number of points
             self.patch_size_max = patch_size
             self.patch_size = 0
-            self.attn_drop = torch.nn.Dropout(attn_drop)
 
         self.qkv = torch.nn.Linear(channels, channels * 3, bias=qkv_bias)
         self.proj = torch.nn.Linear(channels, channels)
@@ -230,7 +247,7 @@ class SerializedAttention(PointModule):
                     qkv.half().reshape(-1, 3, H, C // H),
                     cu_seqlens,
                     max_seqlen=self.patch_size,
-                    dropout_p=self.attn_drop if self.training else 0,
+                    dropout_p=self.attn_drop.p if self.training else 0,
                     softmax_scale=self.scale,
                 ).reshape(-1, C)
                 feat = feat.to(qkv.dtype)
