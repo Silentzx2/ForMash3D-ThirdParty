@@ -86,8 +86,20 @@ class Hunyuan3DPaintPipeline:
 
     def load_models(self):
         torch.cuda.empty_cache()
-        self.models["super_model"] = imageSuperNet(self.config)
-        self.models["multiview_model"] = multiviewDiffusionNet(self.config)
+        component_devices = list(getattr(self.config, "component_devices", []) or [])
+        primary_device = self.config.device
+        try:
+            if component_devices:
+                self.config.device = component_devices[0]
+            self.models["super_model"] = imageSuperNet(self.config)
+            if len(component_devices) > 1:
+                # The renderer remains on the primary GPU. Place the large
+                # multiview diffusion model on the next GPU when the scheduler
+                # has reserved a multi-GPU resource plan.
+                self.config.device = component_devices[1]
+            self.models["multiview_model"] = multiviewDiffusionNet(self.config)
+        finally:
+            self.config.device = primary_device
         print("Models Loaded.")
 
     @torch.no_grad()
