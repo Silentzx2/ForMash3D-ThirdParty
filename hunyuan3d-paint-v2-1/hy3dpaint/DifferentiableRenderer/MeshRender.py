@@ -910,7 +910,7 @@ class MeshRender:
             sRGB corrected image in same format as input
         """
         if isinstance(image, Image.Image):
-            image_rgb = torch.tesnor(np.array(image) / 255.0).float().to(self.device)
+            image_rgb = torch.as_tensor(np.array(image) / 255.0).float().to(self.device)
         elif isinstance(image, np.ndarray):
             image_rgb = torch.tensor(image).float()
         else:
@@ -946,7 +946,7 @@ class MeshRender:
         v0 = self.vtx_pos[self.pos_idx[:, 0], :]
         v1 = self.vtx_pos[self.pos_idx[:, 1], :]
         v2 = self.vtx_pos[self.pos_idx[:, 2], :]
-        face_normals = F.normalize(torch.cross(v1 - v0, v2 - v1, dim=-1), dim=-1)
+        face_normals = F.normalize(torch.cross(v1 - v0, v2 - v0, dim=-1), dim=-1)
         vertex_normals = trimesh.geometry.mean_vertex_normals(
             vertex_count=self.vtx_pos.shape[0],
             faces=self.pos_idx.cpu(),
