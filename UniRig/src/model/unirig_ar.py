@@ -75,7 +75,13 @@ class UniRigAR(ModelSpec):
 
         llm_config = AutoConfig.from_pretrained(**_d)
         if _should_use_sdpa():
-            llm_config._attn_implementation = 'sdpa'
+            # Some causal-LM architectures (including OPT on Transformers 4.44.x)
+            # do not implement SDPA. Honor the model class capability instead of
+            # applying a GPU-wide attention choice to every architecture.
+            model_class = AutoModelForCausalLM._model_mapping[type(llm_config)]
+            llm_config._attn_implementation = (
+                'sdpa' if getattr(model_class, '_supports_sdpa', False) else 'eager'
+            )
         # Force float32 precision for the model
         llm_config.torch_dtype = torch.float32
         # Force enable pre_norm
