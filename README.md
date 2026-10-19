@@ -234,6 +234,10 @@ This repository provides the external model source trees required by that runtim
 
 ---
 
+## ARDY CPU-mode contract
+
+The ForMash3D ARDY adapter explicitly loads both the motion model and its local LLM2Vec text encoder on CPU. The vendored LLM2Vec encoder must keep an explicit non-CUDA device in its single-process path, even when CUDA devices are visible to the host; multi-process text encoding is only used for CUDA requests.
+
 # CUDA / PyTorch Baseline
 
 The current 3DAIGC-oriented integration baseline is:
