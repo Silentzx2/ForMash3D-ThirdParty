@@ -33,6 +33,10 @@ The repo is still being under construction, thanks for your patience.
 - [ ] More stable reconstruction with normal.
 - [ ] Training code release.
 
+## ForMash3D checkpoint compatibility
+
+The `image2normal` checkpoint contains a 4-channel `conv_in.weight`. Its base must remain the 4-channel `lambdalabs/sd-image-variations-diffusers` model. Do not reuse the trained `img2mvimg` UNet for normal prediction: that pipeline uses an 8-channel input and causes `conv_in.weight` size-mismatch errors during checkpoint loading.
+
 ## Preparation for inference
 
 * [Detailed linux installation guide](Installation.md).
