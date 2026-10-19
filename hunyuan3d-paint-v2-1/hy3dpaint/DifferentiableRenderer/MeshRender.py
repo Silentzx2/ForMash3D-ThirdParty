@@ -544,26 +544,35 @@ class MeshRender:
 
     def raster_interpolate(self, uv, rast_out, uv_idx):
         """
-        Interpolate texture coordinates or vertex attributes across rasterized triangles.
-        
-        Args:
-            uv: UV coordinates or vertex attributes to interpolate
-            rast_out: Rasterization output containing barycentric coordinates
-            uv_idx: UV or vertex indices for triangles
-            
-        Returns:
-            Tuple of (interpolated_values, gradient_info)
+        Interpolate attributes in bounded row chunks to avoid a full-frame
+        (height, width, vertices-per-face, channels) gather allocation.
         """
+        if self.raster_mode != "cr":
+            raise RuntimeError(f"No raster named {self.raster_mode}")
 
-        if self.raster_mode == "cr":
-            textd = None
-            barycentric = rast_out[0, ..., :-1]
-            findices = rast_out[0, ..., -1]
-            if uv.dim() == 2:
-                uv = uv.unsqueeze(0)
-            textc = self.raster.interpolate(uv, findices, barycentric, uv_idx)
-        else:
-            raise f"No raster named {self.raster_mode}"
+        textd = None
+        barycentric = rast_out[0, ..., :-1]
+        findices = rast_out[0, ..., -1]
+        if uv.dim() == 2:
+            uv = uv.unsqueeze(0)
+
+        height, width = findices.shape
+        channels = uv.shape[-1]
+        chunk_rows = 128
+        textc = torch.empty(
+            (1, height, width, channels),
+            device=uv.device,
+            dtype=uv.dtype,
+        )
+        for row_start in range(0, height, chunk_rows):
+            row_end = min(row_start + chunk_rows, height)
+            chunk = self.raster.interpolate(
+                uv,
+                findices[row_start:row_end],
+                barycentric[row_start:row_end],
+                uv_idx,
+            )
+            textc[:, row_start:row_end].copy_(chunk)
 
         return textc, textd
 
@@ -901,7 +910,7 @@ class MeshRender:
             sRGB corrected image in same format as input
         """
         if isinstance(image, Image.Image):
-            image_rgb = torch.tesnor(np.array(image) / 255.0).float().to(self.device)
+            image_rgb = torch.as_tensor(np.array(image) / 255.0).float().to(self.device)
         elif isinstance(image, np.ndarray):
             image_rgb = torch.tensor(image).float()
         else:
@@ -932,8 +941,7 @@ class MeshRender:
         )
         vtx_uv = vtx_uv.view(1, vnum, 4) * 2 - 1
 
-        rast_out, rast_out_db = self.raster_rasterize(vtx_uv, self.uv_idx, resolution=self.texture_size)
-        position, _ = self.raster_interpolate(self.vtx_pos, rast_out, self.pos_idx)
+        rast_out, _ = self.raster_rasterize(vtx_uv, self.uv_idx, resolution=self.texture_size)
 
         v0 = self.vtx_pos[self.pos_idx[:, 0], :]
         v1 = self.vtx_pos[self.pos_idx[:, 1], :]
@@ -945,32 +953,59 @@ class MeshRender:
             face_normals=face_normals.cpu(),
         )
         vertex_normals = torch.from_numpy(vertex_normals).to(self.vtx_pos).contiguous()
-        position_normal, _ = self.raster_interpolate(vertex_normals[None, ...], rast_out, self.pos_idx)
-        visible_mask = torch.clamp(rast_out[..., -1:], 0, 1)[0, ..., 0]
-        position = position[0]
-        position_normal = position_normal[0]
-        tri_ids = rast_out[0, ..., 3]
-        tri_ids_mask = tri_ids > 0
-        tri_ids = ((tri_ids - 1) * tri_ids_mask).long()
-        position_normal.reshape(-1, 3)[tri_ids_mask.view(-1)] = face_normals.reshape(-1, 3)[
-            tri_ids[tri_ids_mask].view(-1)
-        ]
 
-        row = torch.arange(position.shape[0]).to(visible_mask.device)
-        col = torch.arange(position.shape[1]).to(visible_mask.device)
-        grid_i, grid_j = torch.meshgrid(row, col, indexing="ij")
+        # Keep only UV-covered pixels from each row block. Holding full-frame
+        # position and normal maps at once can exceed the remaining VRAM even
+        # after interpolation itself is chunked.
+        height, width = self.texture_size
+        row_chunk = 128
+        col_ids = torch.arange(width, device=self.vtx_pos.device, dtype=torch.long)
+        position_parts, normal_parts, grid_parts = [], [], []
+        for row_start in range(0, height, row_chunk):
+            row_end = min(row_start + row_chunk, height)
+            rast_chunk = rast_out[:, row_start:row_end]
+            position_chunk, _ = self.raster_interpolate(self.vtx_pos, rast_chunk, self.pos_idx)
+            normal_chunk, _ = self.raster_interpolate(vertex_normals[None, ...], rast_chunk, self.pos_idx)
 
-        mask = visible_mask.reshape(-1) > 0
-        position = position.reshape(-1, 3)[mask]
-        position_normal = position_normal.reshape(-1, 3)[mask]
-        position = torch.cat((position, torch.ones_like(position[:, :1])), axis=-1)
-        grid = torch.stack((grid_i, grid_j), -1).reshape(-1, 2)[mask]
+            tri_ids = rast_chunk[0, ..., 3]
+            tri_ids_mask = tri_ids > 0
+            tri_ids = ((tri_ids - 1) * tri_ids_mask).long()
+            normal_values = normal_chunk[0].contiguous()
+            normal_values.reshape(-1, 3)[tri_ids_mask.reshape(-1)] = face_normals.reshape(-1, 3)[
+                tri_ids[tri_ids_mask].reshape(-1)
+            ]
 
-        texture_indices = (
-            torch.ones(self.texture_size[0], self.texture_size[1], device=self.device, dtype=torch.long) * -1
+            visible = torch.clamp(rast_chunk[0, ..., -1], 0, 1) > 0
+            mask = visible.reshape(-1)
+            if not torch.any(mask):
+                continue
+
+            positions = position_chunk[0].reshape(-1, 3)[mask]
+            normals = normal_values.reshape(-1, 3)[mask]
+            rows = torch.arange(row_start, row_end, device=self.vtx_pos.device, dtype=torch.long)
+            grid_rows = rows[:, None].expand(-1, width).reshape(-1)[mask]
+            grid_cols = col_ids[None, :].expand(row_end - row_start, -1).reshape(-1)[mask]
+
+            position_parts.append(
+                torch.cat((positions, torch.ones_like(positions[:, :1])), dim=-1).cpu()
+            )
+            normal_parts.append(normals.cpu())
+            grid_parts.append(torch.stack((grid_rows, grid_cols), dim=-1).cpu())
+
+        if position_parts:
+            position = torch.cat(position_parts, dim=0).to(self.vtx_pos)
+            position_normal = torch.cat(normal_parts, dim=0).to(self.vtx_pos)
+            grid = torch.cat(grid_parts, dim=0).to(device=self.vtx_pos.device, dtype=torch.long)
+        else:
+            position = self.vtx_pos.new_empty((0, 4))
+            position_normal = self.vtx_pos.new_empty((0, 3))
+            grid = torch.empty((0, 2), device=self.vtx_pos.device, dtype=torch.long)
+
+        texture_indices = torch.full(
+            (height, width), -1, device=self.vtx_pos.device, dtype=torch.long
         )
-        texture_indices.view(-1)[grid[:, 0] * self.texture_size[1] + grid[:, 1]] = torch.arange(grid.shape[0]).to(
-            device=self.device, dtype=torch.long
+        texture_indices.view(-1)[grid[:, 0] * width + grid[:, 1]] = torch.arange(
+            grid.shape[0], device=self.vtx_pos.device, dtype=torch.long
         )
 
         self.tex_position = position

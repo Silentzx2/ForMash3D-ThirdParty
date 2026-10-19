@@ -59,6 +59,12 @@ The main backend consumes this repository as a **Git submodule** at `backend/thi
 
 ---
 
+## ForMash3D Runtime Integration Notes
+
+The main application pins this repository as a Git submodule. Its Hunyuan3D-Paint integration now bounds raster interpolation and UV attribute extraction in row chunks to reduce large temporary CUDA allocations. When the main scheduler supplies a multi-GPU resource plan, the paint integration places mesh rendering / super-resolution on the first reserved device and multiview diffusion on the second; the renderer honors the configured CUDA device. These placements are component-level placement, not tensor-parallel inference.
+
+GPU memory requirements remain dependent on mesh complexity, texture resolution, checkpoints, and other workloads. The upstream model's real peak memory and end-to-end quality must be verified on the target hardware; CPU/static tests do not establish GPU inference success.
+
 # Why This Repository Exists
 
 ForMash3D integrates multiple research-grade 3D systems with different build requirements, CUDA extensions, Python dependencies, model layouts, and inference contracts.
@@ -227,6 +233,10 @@ ForMash3D remains responsible for application orchestration, API contracts, job 
 This repository provides the external model source trees required by that runtime.
 
 ---
+
+## ARDY CPU-mode contract
+
+The ForMash3D ARDY adapter explicitly loads both the motion model and its local LLM2Vec text encoder on CPU. The vendored LLM2Vec encoder must keep an explicit non-CUDA device in its single-process path, even when CUDA devices are visible to the host; multi-process text encoding is only used for CUDA requests.
 
 # CUDA / PyTorch Baseline
 
