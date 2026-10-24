@@ -9,6 +9,8 @@ def hash_any(obj):
     return md5(str(obj).encode()).hexdigest()
 
 def refine_lr_with_sd(pil_image_list, concept_img_list, control_image_list, prompt_list, pipe=None, strength=0.35, neg_prompt_list="", output_size=(512, 512), controlnet_conditioning_scale=1.):
+    if pipe is None:
+        return pil_image_list
     with torch.no_grad():
         images = pipe(
             image=pil_image_list,

@@ -36,16 +36,22 @@ def fast_geo(front_normal: Image.Image, back_normal: Image.Image, side_normal: I
 def refine_rgb(rgb_pils, front_pil):
     from scripts.refine_lr_to_sr import refine_lr_with_sd
     from scripts.utils import NEG_PROMPT
-    from app.utils import make_image_grid
+    from app.utils import make_image_grid, split_image
     from app.all_models import model_zoo
     from app.utils import rgba_to_rgb
-    rgb_pil = make_image_grid(rgb_pils, rows=2)
-    prompt = "4views, multiview"
-    neg_prompt = NEG_PROMPT
-    control_image = rgb_pil.resize((1024, 1024))
-    refined_rgb = refine_lr_with_sd([rgb_pil], [rgba_to_rgb(front_pil)], [control_image], prompt_list=[prompt], neg_prompt_list=[neg_prompt], pipe=model_zoo.pipe_disney_controlnet_tile_ipadapter_i2i, strength=0.2, output_size=(1024, 1024))[0]
-    refined_rgbs = split_image(refined_rgb, rows=2)
-    return refined_rgbs
+    pipe = getattr(model_zoo, "pipe_disney_controlnet_tile_ipadapter_i2i", None)
+    if pipe is None:
+        return [rgb.resize((512, 512), resample=Image.LANCZOS) for rgb in rgb_pils]
+    try:
+        rgb_pil = make_image_grid(rgb_pils, rows=2)
+        prompt = "4views, multiview"
+        neg_prompt = NEG_PROMPT
+        control_image = rgb_pil.resize((1024, 1024))
+        refined_rgb = refine_lr_with_sd([rgb_pil], [rgba_to_rgb(front_pil)], [control_image], prompt_list=[prompt], neg_prompt_list=[neg_prompt], pipe=pipe, strength=0.2, output_size=(1024, 1024))[0]
+        refined_rgbs = split_image(refined_rgb, rows=2)
+        return refined_rgbs
+    except Exception:
+        return [rgb.resize((512, 512), resample=Image.LANCZOS) for rgb in rgb_pils]
 
 def erode_alpha(img_list):
     out_img_list = []
@@ -53,8 +59,11 @@ def erode_alpha(img_list):
         arr = np.array(img)
         alpha = (arr[:, :, 3] > 127).astype(np.uint8)
         # erode 1px
-        import cv2
-        alpha = cv2.erode(alpha, np.ones((3, 3), np.uint8), iterations=1)
+        try:
+            import cv2
+            alpha = cv2.erode(alpha, np.ones((3, 3), np.uint8), iterations=1)
+        except Exception:
+            pass
         alpha = (alpha * 255).astype(np.uint8)
         img = Image.fromarray(np.concatenate([arr[:, :, :3], alpha[:, :, None]], axis=-1))
         out_img_list.append(img)
@@ -64,7 +73,10 @@ def geo_reconstruct(rgb_pils, normal_pils, front_pil, do_refine=False, predict_n
     if front_pil.size[0] <= 512:
         front_pil = run_sr_fast([front_pil])[0]
     if do_refine:
-        refined_rgbs = refine_rgb(rgb_pils, front_pil)  # 6s
+        try:
+            refined_rgbs = refine_rgb(rgb_pils, front_pil)  # 6s
+        except Exception:
+            refined_rgbs = [rgb.resize((512, 512), resample=Image.LANCZOS) for rgb in rgb_pils]
     else:
         refined_rgbs = [rgb.resize((512, 512), resample=Image.LANCZOS) for rgb in rgb_pils]
     img_list = [front_pil] + run_sr_fast(refined_rgbs[1:])

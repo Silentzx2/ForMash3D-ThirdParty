@@ -95,7 +95,10 @@ class Pix2FacesRenderer:
         pix_to_face = rast_out[..., -1].to(torch.int32) - 1
         return pix_to_face
 
-pix2faces_renderer = Pix2FacesRenderer()
+try:
+    pix2faces_renderer = Pix2FacesRenderer()
+except Exception:
+    pix2faces_renderer = None
 
 def get_visible_faces(meshes: Meshes, cameras: CamerasBase, resolution=1024):
     # pix_to_face = render_pix2faces_py3d(meshes, cameras, H=resolution, W=resolution)['pix_to_face']

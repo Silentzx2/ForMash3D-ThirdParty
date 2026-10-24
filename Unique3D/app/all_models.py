@@ -16,6 +16,14 @@ class MyModelZoo:
     def pipe_disney_controlnet_tile_ipadapter_i2i(self):
         return self._pipe_disney_controlnet_lineart_ipadapter_i2i
     
+    @pipe_disney_controlnet_tile_ipadapter_i2i.setter
+    def pipe_disney_controlnet_tile_ipadapter_i2i(self, value):
+        self._pipe_disney_controlnet_lineart_ipadapter_i2i = value
+
+    @pipe_disney_controlnet_tile_ipadapter_i2i.deleter
+    def pipe_disney_controlnet_tile_ipadapter_i2i(self):
+        self._pipe_disney_controlnet_lineart_ipadapter_i2i = None
+    
     def init_models(self):
         self._pipe_disney_controlnet_lineart_ipadapter_i2i = load_common_sd15_pipe(base_model=self.base_model, ip_adapter=True, plus_model=False, controlnet="./ckpt/controlnet-tile", pipeline_class=StableDiffusionControlNetImg2ImgPipeline)
 
